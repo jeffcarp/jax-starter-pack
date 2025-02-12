@@ -1,0 +1,16 @@
+jax==0.4.38
+jaxlib==0.4.38
+jaxtyping==0.2.34
+fiddle==0.3.0
+tqdm==4.67.1
+grain==0.2.2
+flax==0.10.2
+matplotlib==3.10.0
+matplotlib-inline==0.1.7
+numpy==1.26.4
+optax==0.2.4
+orbax-checkpoint
+orbax-export
+# For profiling
+tensorflow
+tensorboard-plugin-profile
