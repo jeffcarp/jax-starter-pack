@@ -22,6 +22,31 @@ import tqdm
 
 import config as starter_config
 
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+    OTLPMetricExporter,
+)
+from opentelemetry.sdk.resources import Resource
+
+# Configure resource attributes (service name, etc.)
+resource = Resource(attributes={"service.name": "jax-ml-training"})
+
+_COLLECTOR_ADDRESS = '0.0.0.0:4317' # test
+
+metric_reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(endpoint=_COLLECTOR_ADDRESS)
+)
+metrics_provider = MeterProvider(
+    resource=resource,
+    metric_readers=[metric_reader],
+)
+metrics.set_meter_provider(metrics_provider)
+meter = metrics.get_meter(__name__)
 
 _CONFIG_FLAG = fdl_flags.DEFINE_fiddle_config(
   "config",
@@ -147,6 +172,8 @@ def train(config: starter_config.TrainConfig):
 
     loss = train_step(model, optimizer, batch)
     progress_bar.set_postfix({"loss": loss.item()})
+    # Record metrics
+    meter.create_counter("training_loss").add(loss)
 
     if step % config.summary_interval_steps == 0 and step > 0:
       print(f"Writing summaries to {config.log_dir}...")
@@ -176,9 +203,14 @@ def train(config: starter_config.TrainConfig):
 
 
 def main(argv):
-  buildable = _CONFIG_FLAG.value or starter_config.default_config()
-  config = fdl.build(buildable)
-  train(config)
+
+  # DEBUGGING
+  meter.create_counter("training_loss").add(123)
+  print('DEBUG --- CONFIG SENT')
+
+  #buildable = _CONFIG_FLAG.value or starter_config.default_config()
+  #config = fdl.build(buildable)
+  #train(config)
 
 
 if __name__ == "__main__":
