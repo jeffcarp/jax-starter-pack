@@ -11,6 +11,7 @@ from absl import app
 from flax import nnx
 from fiddle import absl_flags as fdl_flags
 import fiddle as fdl
+import grpc
 import jax
 import jax.numpy as jnp
 import grain.python as grain
@@ -34,12 +35,15 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
 from opentelemetry.sdk.resources import Resource
 
 # Configure resource attributes (service name, etc.)
-resource = Resource(attributes={"service.name": "jax-ml-training"})
+resource = Resource(attributes={"service.name": "jax-ml-job-5"})
 
-_COLLECTOR_ADDRESS = '0.0.0.0:4317' # test
+_COLLECTOR_ADDRESS = 'http://0.0.0.0:4317/v1/metrics' # test
 
 metric_reader = PeriodicExportingMetricReader(
-    OTLPMetricExporter(endpoint=_COLLECTOR_ADDRESS)
+    OTLPMetricExporter(
+      endpoint=_COLLECTOR_ADDRESS,
+      credentials=grpc.ssl_channel_credentials(),
+    )
 )
 metrics_provider = MeterProvider(
     resource=resource,
@@ -51,7 +55,6 @@ meter = metrics.get_meter(__name__)
 _CONFIG_FLAG = fdl_flags.DEFINE_fiddle_config(
   "config",
   help_string="The name of the Fiddle config",
-  # default_module=sys.modules[__name__],
   default_module=starter_config,
 )
 
@@ -160,6 +163,7 @@ def train(config: starter_config.TrainConfig):
     enumerate(config.train_loader),
     total=config.train_total_steps,
   )
+  loss_gauge = meter.create_gauge("train_loss")
   for step, batch in progress_bar:
     model.train()
 
@@ -171,14 +175,18 @@ def train(config: starter_config.TrainConfig):
       jax.profiler.stop_trace()
 
     loss = train_step(model, optimizer, batch)
-    progress_bar.set_postfix({"loss": loss.item()})
-    # Record metrics
-    meter.create_counter("training_loss").add(loss)
+    loss_float = loss.item()
+    progress_bar.set_postfix({"loss": loss_float})
 
     if step % config.summary_interval_steps == 0 and step > 0:
       print(f"Writing summaries to {config.log_dir}...")
-      summary_writer.add_scalar("train/loss", np.array(loss.item()), step)
+      summary_writer.add_scalar("train/loss", np.array(loss_float), step)
       summary_writer.flush()
+
+    if step % 50 == 0:
+      # Record metrics to OTel
+      print('RECORDING LOSS TO OTEL', loss_float)
+      loss_gauge.set(loss_float)
 
     if step % config.eval_interval_steps == 0 and step > 0:
       evaluate_model(
@@ -189,28 +197,23 @@ def train(config: starter_config.TrainConfig):
         summary_writer=summary_writer,
       )
 
-    if step % config.checkpoint_interval_steps == 0 and step > 0:
-      print(f"Writing checkpoint to {config.log_dir}...")
-      _, state = nnx.split(model)
-      pure_dict_state = state.to_pure_dict()
-      checkpointer.save(
-        os.path.join(config.checkpoint_dir, str(step)),
-        pure_dict_state,
-      )
+    #if step % config.checkpoint_interval_steps == 0 and step > 0:
+    #  print(f"Writing checkpoint to {config.log_dir}...")
+    #  _, state = nnx.split(model)
+    #  pure_dict_state = state.to_pure_dict()
+    #  checkpointer.save(
+    #    os.path.join(config.checkpoint_dir, str(step)),
+    #    pure_dict_state,
+    #  )
 
     if step >= config.train_total_steps:
       break
 
 
 def main(argv):
-
-  # DEBUGGING
-  meter.create_counter("training_loss").add(123)
-  print('DEBUG --- CONFIG SENT')
-
-  #buildable = _CONFIG_FLAG.value or starter_config.default_config()
-  #config = fdl.build(buildable)
-  #train(config)
+  buildable = _CONFIG_FLAG.value or starter_config.default_config()
+  config = fdl.build(buildable)
+  train(config)
 
 
 if __name__ == "__main__":
