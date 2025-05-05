@@ -3,6 +3,7 @@ jaxlib==0.4.38
 jaxtyping==0.2.34
 fiddle==0.3.0
 tqdm==4.67.1
+google_metrax==0.1.3
 grain==0.2.2
 flax==0.10.2
 matplotlib==3.10.0

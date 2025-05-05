@@ -23,9 +23,9 @@ class TrainConfig:
   log_dir: str
   checkpoint_dir: str
   train_total_steps: int = 2000
-  eval_interval_steps: int = 500
-  summary_interval_steps: int = 200
-  checkpoint_interval_steps: int = 250
+  eval_interval_steps: int = 250
+  summary_interval_steps: int = 100
+  checkpoint_interval_steps: int = 200
   run_profile: bool = True
   profile_start_step: int = 50
   profile_end_step: int = 60

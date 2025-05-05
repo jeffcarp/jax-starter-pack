@@ -28,6 +28,8 @@ Run TensorBoard for metrics visualization:
 tensorboard --logdir=/tmp/tensorboard
 ```
 
+![TensorBoard example](docs/tensorboard.png)
+
 ## Overview
 
 Here are the main components of the model:

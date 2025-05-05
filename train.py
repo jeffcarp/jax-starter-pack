@@ -14,6 +14,7 @@ import fiddle as fdl
 import jax
 import jax.numpy as jnp
 import grain.python as grain
+from metrax import nnx as metrax
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
@@ -62,17 +63,12 @@ def train_step(
 def eval_step(
   model: nnx.Module,
   batch: dict[str, jax.Array],
-  eval_metrics: nnx.MultiMetric,
 ):
   batch_tokens = jnp.array(batch["measurement"])
   labels = jnp.array(batch["label"], dtype=jnp.int32)
   loss, logits = compute_losses_and_logits(model, batch_tokens, labels)
-
-  eval_metrics.update(
-    loss=loss,
-    logits=logits,
-    labels=labels,
-  )
+  predictions = jnp.argmax(logits, axis=-1)
+  return predictions, labels
 
 
 def evaluate_model(
@@ -87,7 +83,11 @@ def evaluate_model(
 
   eval_metrics.reset()
   for test_batch in tqdm.tqdm(eval_loader):
-    eval_step(model, test_batch, eval_metrics)
+    predictions, labels = eval_step(model, test_batch)
+    eval_metrics.update(
+      predictions=predictions,
+      labels=labels,
+    )
 
   for metric, value in eval_metrics.compute().items():
     key = f"eval/{metric}"
@@ -126,8 +126,11 @@ def train(config: starter_config.TrainConfig):
   # Set up jax.monitoring event listener.
 
   eval_metrics = nnx.MultiMetric(
-    loss=nnx.metrics.Average("loss"),
-    accuracy=nnx.metrics.Accuracy(),
+    accuracy=metrax.Accuracy(),
+    precision=metrax.Precision(),
+    recall=metrax.Recall(),
+    aucpr=metrax.AUCPR(),
+    aucroc=metrax.AUCROC(),
   )
   checkpointer = ocp.StandardCheckpointer()
 
